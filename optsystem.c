@@ -51,7 +51,6 @@ int optsystem_new_system (optsystem_t *self) {
         self->initial_state->x[i] = 0.0;
 
     self->obstacle_list = NULL;
-    self->rectangle_list = NULL;
     return 1;
 }
 
@@ -225,7 +224,6 @@ int optsystem_segment_on_obstacle (optsystem_t *self, state_t *state_initial, st
     initGEOS(notice, log_and_exit);
 	GEOSGeometry* g1;
 	GSList *obstacle_list_curr = self->obstacle_list;
-	GSList *rectangle_list_curr = self->rectangle_list;
     
     //create with coordinates 
 	GEOSCoordSequence* cs1;
@@ -240,14 +238,6 @@ int optsystem_segment_on_obstacle (optsystem_t *self, state_t *state_initial, st
 
 
 	g1 = GEOSGeom_createLineString(cs1);
-	while (rectangle_list_curr) {
-		GEOSGeometry* g3 = (rectangle_list_curr->data); 
-		if (GEOSIntersects(g1,g3)) {
-			finishGEOS();
-			return 1;
-		}
-		rectangle_list_curr = g_slist_next (rectangle_list_curr);
-	}
 
 	GEOSGeometry* g2;
 	while (obstacle_list_curr) {
@@ -323,26 +313,15 @@ gboolean optsystem_on_obstacle (optsystem_t *self, state_t *state) {
 	GEOSGeometry* g1;
 	GEOSGeometry* g2;
 	GSList *obstacle_list_curr = self->obstacle_list;
-	GSList *rectangle_list_curr = self->rectangle_list;
 
     //create with coordinates 
 	GEOSCoordSequence* cs1;
-	GEOSGeometry* g3;
 	int i;
 	cs1 = GEOSCoordSeq_create(1,2);
 
 	i=GEOSCoordSeq_setX(cs1, 0, state->x[0]);
 	i=GEOSCoordSeq_setY(cs1, 0,state->x[1]);
 	g1 = GEOSGeom_createPoint(cs1);
-
-	while (rectangle_list_curr) {
-		g3 = (rectangle_list_curr->data);
-		if ( GEOSContains(g3, g1) ) {
-			finishGEOS();	
-			return 1;
-		}
-	 	rectangle_list_curr = g_slist_next (rectangle_list_curr);
-	}	
 
 	while (obstacle_list_curr) {
 		g2 = (obstacle_list_curr->data);
@@ -515,27 +494,6 @@ gboolean optsystem_update_obstacles (optsystem_t *self, GSList *obstacle_list) {
 		GEOSGeometry* g_curr = (obstacle_list_curr->data);
         self->obstacle_list = g_slist_prepend (self->obstacle_list, g_curr);
         obstacle_list_curr = g_slist_next (obstacle_list_curr);
-    }
-
-    return TRUE;
-}
-
-//create rectangle_list
-gboolean optsystem_update_rectangles (optsystem_t *self, GSList *rectangle_list) {
-
-    // Clear the previous rectangle
-    while (self->rectangle_list) {
-        GEOSGeometry* g = (self->rectangle_list->data);
-        self->rectangle_list = g_slist_remove (self->rectangle_list, g);
-        free (g);
-    }
-    
-    // Add new obstacles
-    GSList *rectangle_list_curr = rectangle_list;
-    while (rectangle_list_curr) {
-		GEOSGeometry* g_curr = (rectangle_list_curr->data);
-	    self->rectangle_list = g_slist_prepend (self->rectangle_list, g_curr);
-        rectangle_list_curr = g_slist_next (rectangle_list_curr);
     }
 
     return TRUE;
