@@ -32,6 +32,7 @@ http://arxiv.org/abs/1005.0416
 
 #include "optsystem.h"
 
+#include "geos_c.h"
 
 // Returns 1 iff (state) is on an obstacle
 gboolean 
@@ -39,7 +40,7 @@ optsystem_on_obstacle (optsystem_t *self, state_t *state);
 
 // Returns 1 iff the line connecting (state_initial) and (state_final) lies on an obstacle
 int 
-optsystem_segment_on_obstacle (optsystem_t *self, state_t *state_initial, state_t *state_final, int num_steps);
+optsystem_segment_on_obstacle (optsystem_t *self, state_t *state_initial, state_t *state_final);
 
 
 // Allocates memory for and initializes an empty dynamical system
@@ -50,10 +51,32 @@ int optsystem_new_system (optsystem_t *self) {
         self->initial_state->x[i] = 0.0;
 
     self->obstacle_list = NULL;
-    
+    self->rectangle_list = NULL;
     return 1;
 }
 
+void notice(const char *fmt, ...) {
+	va_list ap;
+
+        fprintf( stdout, "NOTICE: ");
+        
+	va_start (ap, fmt);
+        vfprintf( stdout, fmt, ap);
+        va_end(ap);
+        fprintf( stdout, "\n" );
+}
+
+void log_and_exit(const char *fmt, ...) {
+	va_list ap;
+
+        fprintf( stdout, "ERROR: ");
+        
+	va_start (ap, fmt);
+        vfprintf( stdout, fmt, ap);
+        va_end(ap);
+        fprintf( stdout, "\n" );
+	exit(1);
+}
 
 // Frees up the memory used by optsystem_t *self
 int optsystem_free_system (optsystem_t *self) {
@@ -197,42 +220,47 @@ double optsystem_evaluate_distance_for_cost (optsystem_t *self, GSList *inputs) 
 
 
 // Checks whether the line segment between (state_initial) and (state_final) lies on an obstacle
-int optsystem_segment_on_obstacle (optsystem_t *self, state_t *state_initial, state_t *state_final, int num_steps) {
+int optsystem_segment_on_obstacle (optsystem_t *self, state_t *state_initial, state_t *state_final) {
 
-    GSList *obstacle_list_curr = self->obstacle_list;
-
-    while (obstacle_list_curr) {
-        region_2d_t *obstacle_region = (region_2d_t *) (obstacle_list_curr->data);
-        double center[2] = {
-            obstacle_region->center[0],
-            obstacle_region->center[1]
-        };
-        double size[2] = {
-            obstacle_region->size[0]/2.0,
-            obstacle_region->size[1]/2.0
-        };
-
-        double disc[2] = {
-            (state_final->x[0] - state_initial->x[0])/( (double)num_steps ),
-            (state_final->x[1] - state_initial->x[1])/( (double)num_steps )
-        };
-
-        double state_curr[2] = {
-            state_initial->x[0],
-            state_initial->x[1]
-        };
-
-        for (int i = 0; i < num_steps; i++) {
-            if ( (fabs(center[0] - state_curr[0]) <= size[0]) && (fabs(center[1] - state_curr[1]) <= size[1]) ) 
-                return 1;
-            
-            state_curr[0] += disc[0];
-            state_curr[1] += disc[1];
-        }
-        
-        obstacle_list_curr = g_slist_next (obstacle_list_curr);
-    }
+    initGEOS(notice, log_and_exit);
+	GEOSGeometry* g1;
+	GSList *obstacle_list_curr = self->obstacle_list;
+	GSList *rectangle_list_curr = self->rectangle_list;
     
+    //create with coordinates 
+	GEOSCoordSequence* cs1;
+	int i;
+	cs1 = GEOSCoordSeq_create(2,2);
+
+	i=GEOSCoordSeq_setX(cs1, 0, state_initial->x[0]);
+	i=GEOSCoordSeq_setY(cs1, 0, state_initial->x[1]);
+	i=GEOSCoordSeq_setX(cs1, 1, state_final->x[0]);
+	i=GEOSCoordSeq_setY(cs1, 1, state_final->x[1]);
+
+
+
+	g1 = GEOSGeom_createLineString(cs1);
+	while (rectangle_list_curr) {
+		GEOSGeometry* g3 = (rectangle_list_curr->data); 
+		if (GEOSIntersects(g1,g3)) {
+			finishGEOS();
+			return 1;
+		}
+		rectangle_list_curr = g_slist_next (rectangle_list_curr);
+	}
+
+	GEOSGeometry* g2;
+	while (obstacle_list_curr) {
+		g2 = (obstacle_list_curr->data); 
+		if (GEOSIntersects(g1,g2)) {
+			finishGEOS();
+			return 1;
+		}
+
+		obstacle_list_curr = g_slist_next (obstacle_list_curr);		
+	}
+
+    finishGEOS();
     return 0;
 }
 
@@ -241,8 +269,6 @@ int optsystem_segment_on_obstacle (optsystem_t *self, state_t *state_initial, st
 int optsystem_extend_to (optsystem_t *self, state_t *state_from, state_t *state_towards, 
                          int *fully_extends, GSList **trajectory,
                          int *num_node_states, int **nodes_states, GSList **inputs) {
-
-    int discretization_num_steps = 10;
     
     GSList *trajectory_curr = NULL; // Start with an empty trajectory
     GSList *inputs_curr = NULL;
@@ -252,8 +278,8 @@ int optsystem_extend_to (optsystem_t *self, state_t *state_from, state_t *state_
 
     double dist = sqrt (dist_x * dist_x + dist_y * dist_y);
 
-    if (dist < 1.0) {
-        if (optsystem_segment_on_obstacle (self, state_from, state_towards, discretization_num_steps) ) {
+    if (dist < 1) {
+        if (optsystem_segment_on_obstacle (self, state_from, state_towards) ) {
             *fully_extends = 0;
             return 0;
         }
@@ -271,7 +297,7 @@ int optsystem_extend_to (optsystem_t *self, state_t *state_from, state_t *state_
         state_t *state_new = optsystem_new_state (self);  
         state_new->x[0] = (state_towards->x[0] - state_from->x[0])/dist + state_from->x[0];
         state_new->x[1] = (state_towards->x[1] - state_from->x[1])/dist + state_from->x[1];
-        if (optsystem_segment_on_obstacle(self, state_from, state_new, discretization_num_steps)) {
+        if (optsystem_segment_on_obstacle(self, state_from, state_new)) {
             optsystem_free_state (self, state_new);
             return 0;
         }
@@ -293,18 +319,41 @@ int optsystem_extend_to (optsystem_t *self, state_t *state_from, state_t *state_
 // Checks whether a given state is on an obstacle
 gboolean optsystem_on_obstacle (optsystem_t *self, state_t *state) {
 
-    GSList *obstacle_list_curr = self->obstacle_list;
+    initGEOS(notice, log_and_exit);
+	GEOSGeometry* g1;
+	GEOSGeometry* g2;
+	GSList *obstacle_list_curr = self->obstacle_list;
+	GSList *rectangle_list_curr = self->rectangle_list;
 
-    while (obstacle_list_curr) {
-        region_2d_t *obstacle_region = (region_2d_t *) (obstacle_list_curr->data);
+    //create with coordinates 
+	GEOSCoordSequence* cs1;
+	GEOSGeometry* g3;
+	int i;
+	cs1 = GEOSCoordSeq_create(1,2);
 
-        if ( (fabs(obstacle_region->center[0] - state->x[0]) <= obstacle_region->size[0]/2.0) &&
-             (fabs(obstacle_region->center[1] - state->x[1]) <= obstacle_region->size[1]/2.0) ) 
-            return 1;
+	i=GEOSCoordSeq_setX(cs1, 0, state->x[0]);
+	i=GEOSCoordSeq_setY(cs1, 0,state->x[1]);
+	g1 = GEOSGeom_createPoint(cs1);
 
-        obstacle_list_curr = g_slist_next (obstacle_list_curr);
-    }
-    
+	while (rectangle_list_curr) {
+		g3 = (rectangle_list_curr->data);
+		if ( GEOSContains(g3, g1) ) {
+			finishGEOS();	
+			return 1;
+		}
+	 	rectangle_list_curr = g_slist_next (rectangle_list_curr);
+	}	
+
+	while (obstacle_list_curr) {
+		g2 = (obstacle_list_curr->data);
+		if ( GEOSContains(g2, g1) ) {
+			finishGEOS();	
+			return 1;
+		}
+	 	obstacle_list_curr = g_slist_next (obstacle_list_curr);
+	}
+
+    finishGEOS();
     return 0;
 }
 
@@ -455,24 +504,38 @@ gboolean optsystem_update_obstacles (optsystem_t *self, GSList *obstacle_list) {
 
     // Clear the previous obstacles
     while (self->obstacle_list) {
-        region_2d_t *region_curr = (region_2d_t *) (self->obstacle_list->data);
-        self->obstacle_list = g_slist_remove (self->obstacle_list, region_curr);
-        free (region_curr);
+        GEOSGeometry* g = (self->obstacle_list->data);
+        self->obstacle_list = g_slist_remove (self->obstacle_list, g);
+        free (g);
     }
     
     // Add new obstacles
     GSList *obstacle_list_curr = obstacle_list;
     while (obstacle_list_curr) {
-        region_2d_t *region_curr = (region_2d_t *) (obstacle_list_curr->data);
-        region_2d_t *region_new = (region_2d_t *) malloc (sizeof (region_2d_t));
-        region_new->center[0] = region_curr->center[0];
-        region_new->center[1] = region_curr->center[1];
-        region_new->size[0] = region_curr->size[0];
-        region_new->size[1] = region_curr->size[1];
-
-        self->obstacle_list = g_slist_prepend (self->obstacle_list, (gpointer)region_new);
-
+		GEOSGeometry* g_curr = (obstacle_list_curr->data);
+        self->obstacle_list = g_slist_prepend (self->obstacle_list, g_curr);
         obstacle_list_curr = g_slist_next (obstacle_list_curr);
+    }
+
+    return TRUE;
+}
+
+//create rectangle_list
+gboolean optsystem_update_rectangles (optsystem_t *self, GSList *rectangle_list) {
+
+    // Clear the previous rectangle
+    while (self->rectangle_list) {
+        GEOSGeometry* g = (self->rectangle_list->data);
+        self->rectangle_list = g_slist_remove (self->rectangle_list, g);
+        free (g);
+    }
+    
+    // Add new obstacles
+    GSList *rectangle_list_curr = rectangle_list;
+    while (rectangle_list_curr) {
+		GEOSGeometry* g_curr = (rectangle_list_curr->data);
+	    self->rectangle_list = g_slist_prepend (self->rectangle_list, g_curr);
+        rectangle_list_curr = g_slist_next (rectangle_list_curr);
     }
 
     return TRUE;

@@ -12,6 +12,8 @@ LDFLAGS_STD  := -lm
 # glib
 CFLAGS_GLIB  := `pkg-config --cflags glib-2.0 gmodule-2.0`
 LDFLAGS_GLIB := `pkg-config --libs glib-2.0 gmodule-2.0 gthread-2.0 gobject-2.0`
+# geos
+LDFLAGS_GEOS := -lgeos_c
 
 %.o: %.c %.h
 	@echo "    [$@]"
@@ -21,7 +23,7 @@ LDFLAGS_GLIB := `pkg-config --libs glib-2.0 gmodule-2.0 gthread-2.0 gobject-2.0`
 CFLAGS = $(CFLAGS_STD) $(CFLAGS_GLIB)
 
 
-LDFLAGS = $(LDFLAGS_STD) $(LDFLAGS_GLIB) 
+LDFLAGS = $(LDFLAGS_STD) $(LDFLAGS_GEOS) $(LDFLAGS_GLIB) 
 
 
 OPTTREE_OBJS =  opttree.o \
