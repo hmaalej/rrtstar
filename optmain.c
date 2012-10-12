@@ -173,7 +173,7 @@ int main () {
     
     // 3. Run opttree in iterations
     int64_t time_start = ts_now(); // Record the start time
-    for (int i = 0; i < num_iterations; i++) {
+    /*for (int i = 0; i < num_iterations; i++) {
 
         opttree_iteration (opttree);
         
@@ -181,7 +181,7 @@ int main () {
             printf ("Time: %5.5lf, Cost: %5.5lf\n", 
                     ((double)(ts_now() - time_start))/1000000.0, opttree->lower_bound); 
         
-    }
+    }*/
     
     // 4. Save the results to the files
     optmain_write_optimal_path_to_file (opttree);
