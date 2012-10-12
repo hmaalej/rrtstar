@@ -104,7 +104,7 @@ optsystem_sample_target_state (optsystem_t *self, state_t *random_state);
 
 // Evaluates the distance between two given states for nearest neighbors computation
 double 
-optsystem_evaluate_distance (optsystem_t *self, state_t *state_from, state_t *state_to);
+optsystem_evaluate_distance (optsystem_t *self, state_t *state_from, state_t *state_to,int k);
 
 // Evaluates the cost of a given trajectory
 double 
@@ -118,7 +118,7 @@ optsystem_evaluate_distance_for_cost (optsystem_t *self, GSList *inputs);
 //   such nodes is teruned in (num_node_states).
 int 
 optsystem_extend_to (optsystem_t *self, state_t *state_from, state_t *state_towards, 
-                     int *fully_extends, GSList **trajectory, int *num_node_states, int **node_states, GSList **inputs);
+                     int *fully_extends, GSList **trajectory, int *num_node_states, int **node_states, GSList **inputs,int k);
 
 // Returns true iff the given state reaches the goal
 gboolean 
@@ -139,13 +139,15 @@ optsystem_update_goal_region (optsystem_t *self, region_2d_t *goal_region);
 gboolean 
 optsystem_update_obstacles (optsystem_t *self, GSList *obstacle_list);
 
-
+//Updates the list of rectangles
+gboolean optsystem_update_rectangles (optsystem_t *self, GSList *rectangle_list);
 // A 3D region to describe operating and goal regions as well as obstacles
 struct _region_2d_t {
     double center[2];
     double size[2];
 };
 // ====================================================================================
+
 
 
 // State structure

@@ -320,7 +320,7 @@ node_t *opttree_add_traj_to_graph (opttree_t *self, node_t *node_start, node_t *
 
 // Extend node towards a given sample
 // If node can not be extended , e.g., a collision occurs, then returns FALSE
-node_t *opttree_extend_towards_sample (opttree_t *self, node_t *node_from, state_t *state_towards) {
+node_t *opttree_extend_towards_sample (opttree_t *self, node_t *node_from, state_t *state_towards,int k) {
 
     // Extend the node towards the sample
     int fully_extends = 0;
@@ -329,7 +329,7 @@ node_t *opttree_extend_towards_sample (opttree_t *self, node_t *node_from, state
     int  *node_states = NULL;
     GSList *inputs = NULL;
     if (optsystem_extend_to (self->optsys, node_from->state, state_towards, 
-                             &fully_extends, &trajectory, &num_node_states, &node_states, &inputs) == 0) {
+                             &fully_extends, &trajectory, &num_node_states, &node_states, &inputs,k) == 0) {
         return NULL;
     }
     
@@ -352,8 +352,8 @@ node_t *opttree_extend_towards_sample (opttree_t *self, node_t *node_from, state
 
 
 // Extends a given node towards state_towards and returns the resulting state
-//    does not generate a new node or populate the tree
-state_t *opttree_extend_towards_sample_no_create_node (opttree_t *self, node_t *node_from, state_t *state_towards) {
+//    does not generate a  node or populate the tree
+state_t *opttree_extend_towards_sample_no_create_node (opttree_t *self, node_t *node_from, state_t *state_towards,int k) {
 
     state_t *state = NULL;
 
@@ -363,7 +363,7 @@ state_t *opttree_extend_towards_sample_no_create_node (opttree_t *self, node_t *
     int *node_states = NULL;
     GSList *inputs = NULL;
     if (optsystem_extend_to (self->optsys, node_from->state, state_towards, 
-                             &fully_extends, &trajectory, &num_node_states, &node_states, &inputs) == 0)
+                             &fully_extends, &trajectory, &num_node_states, &node_states, &inputs,k) == 0)
         return NULL;
 
     {                                      
@@ -403,7 +403,7 @@ state_t *opttree_extend_towards_sample_no_create_node (opttree_t *self, node_t *
 
 // Goes through all the nodes in node_list and returns a pointer to the node that 
 //    gets to state_towards with minimum cost
-node_t* opttree_find_min_node_in_set (opttree_t *self, state_t *state_towards, GSList *list_nodes) {
+node_t* opttree_find_min_node_in_set (opttree_t *self, state_t *state_towards, GSList *list_nodes,int k) {
 
     node_t *min_node = NULL;
     double min_cost = DBL_MAX;
@@ -422,7 +422,7 @@ node_t* opttree_find_min_node_in_set (opttree_t *self, state_t *state_towards, G
         GSList *inputs = NULL;
 
         if (optsystem_extend_to (self->optsys, node_curr->state, state_towards, 
-                                 &fully_extends, &trajectory, &num_node_states, &node_states, &inputs) != 0) {
+                                 &fully_extends, &trajectory, &num_node_states, &node_states, &inputs,k) != 0) {
 
 
             if (fully_extends)
@@ -504,7 +504,7 @@ GSList *opttree_find_nodes_in_ball (opttree_t *self, state_t *state, double ball
 
 
 // Extends the node back to the tree 
-int opttree_extend_back_to_tree (opttree_t *self, node_t *node_from, GSList *node_list) {
+int opttree_extend_back_to_tree (opttree_t *self, node_t *node_from, GSList *node_list,int k) {
     
 
     state_t *state_from = node_from->state;
@@ -535,7 +535,7 @@ int opttree_extend_back_to_tree (opttree_t *self, node_t *node_from, GSList *nod
         int *node_states = NULL;
         GSList *inputs = NULL;
         if (optsystem_extend_to (self->optsys, state_from, state_towards, 
-                                 &fully_extends, &trajectory, &num_node_states, &node_states, &inputs) == 0) {
+                                 &fully_extends, &trajectory, &num_node_states, &node_states, &inputs,k) == 0) {
             fully_extends = 0;
         }
         
@@ -583,7 +583,7 @@ int opttree_extend_back_to_tree (opttree_t *self, node_t *node_from, GSList *nod
 }
 
 
-int opttree_iteration (opttree_t *self) {
+int opttree_iteration (opttree_t *self,int k) {
 
     // 1. Sample a state
     state_t state_random;
@@ -619,12 +619,21 @@ int opttree_iteration (opttree_t *self) {
             self->ball_radius_last = self->ball_radius_max;
 
         // A.2. Find the nearest node
-        node_t *nearest_node = opttree_find_nearest_neighbor (self, &state_random);
-        if (!nearest_node)
+       state_t state_random1=state_random;
+	if (state_random.x[0]<0) state_random1.x[0]=state_random.x[0]+360/k;
+	else state_random1.x[0]=state_random.x[0]-360/k;
+        node_t *nearest_node1 = opttree_find_nearest_neighbor (self, &state_random);
+	node_t *nearest_node2 = opttree_find_nearest_neighbor (self, &state_random1);
+	int d1=optsystem_evaluate_distance (self, nearest_node1->state,&state_random,k );
+	int d2=optsystem_evaluate_distance (self, nearest_node2->state,&state_random1,k );        
+	node_t *nearest_node;
+	if (d1<=d2){ nearest_node=nearest_node1;}
+	else {nearest_node=nearest_node2; }
+	if (!nearest_node)
             return 0;
-        
+            
         // A.3. Extend the node towards the sampled state -- just computer the extended state
-        state_t *extended_state = opttree_extend_towards_sample_no_create_node (self, nearest_node, &state_random);
+        state_t *extended_state = opttree_extend_towards_sample_no_create_node (self, nearest_node, &state_random,k);
         if (!extended_state)
             return 0;
         
@@ -635,20 +644,20 @@ int opttree_iteration (opttree_t *self) {
         // A.5. Pick the node to be extended
         node_t *node_from = nearest_node;  // If close_nodes is empty,     then extend nearest_nodes
         if (close_nodes) {                 // If close_nodes is non-empty, then extend the min_node in close_nodes
-            node_from = opttree_find_min_node_in_set (self, extended_state, close_nodes);
+            node_from = opttree_find_min_node_in_set (self, extended_state, close_nodes,k);
             if (!node_from)                //   If no close node can be extended, then fall back to the nearest 
                 node_from = nearest_node;
         }
         
         // A.6. Extend the appropriate node
-        node_t *extended_node = opttree_extend_towards_sample (self, node_from, extended_state);
+        node_t *extended_node = opttree_extend_towards_sample (self, node_from, extended_state,k);
         if (!extended_node) {
             g_slist_free (close_nodes);
             return 0;
         }
 
         // A.7. Rewire the tree if possible
-        opttree_extend_back_to_tree (self, extended_node, close_nodes);
+        opttree_extend_back_to_tree (self, extended_node, close_nodes,k);
         
         optsystem_free_state (self->optsys, extended_state);
         
@@ -659,12 +668,22 @@ int opttree_iteration (opttree_t *self) {
     else {
         
         // B.1. Find the nearest node
-        node_t *nearest_node = opttree_find_nearest_neighbor (self, &state_random);
-        if (!nearest_node)
+	state_t state_random1=state_random;
+	if (state_random.x[0]<0) state_random1.x[0]=state_random.x[0]+360/k;
+	else state_random1.x[0]=state_random.x[0]-360/k;
+        node_t *nearest_node1 = opttree_find_nearest_neighbor (self, &state_random);
+	node_t *nearest_node2 = opttree_find_nearest_neighbor (self, &state_random1);
+	int d1=optsystem_evaluate_distance (self, nearest_node1->state,&state_random,k );
+	int d2=optsystem_evaluate_distance (self, nearest_node2->state,&state_random1,k );        
+	node_t *nearest_node;
+	if (d1<=d2){ nearest_node=nearest_node1;}
+	else {nearest_node=nearest_node2; }
+	if (!nearest_node)
             return 0;
         
         // B.2. Extend the nearest towards the sample
-        node_t *extended_node = opttree_extend_towards_sample (self, nearest_node, &state_random);
+        //node_t *extended_node = opttree_extend_towards_sample (self, nearest_node, &state_random);
+	node_t *extended_node = opttree_extend_towards_sample (self, nearest_node, &state_random,k);
         if (!extended_node)
             return 0;
     }
@@ -742,10 +761,10 @@ opttree_t* opttree_create () {
 
     // Initialize parameters to default values
     self->run_rrtstar = 1;
-    self->ball_radius_constant = 30.0;
-    self->ball_radius_max = 1.0;
+    self->ball_radius_constant = 30;
+    self->ball_radius_max = 1;
     self->target_sample_prob_after_first_solution = 0.0;
-    self->target_sample_prob_before_first_solution = 0.0;
+    self->target_sample_prob_before_first_solution = 0.9;
     return self;
 }
 

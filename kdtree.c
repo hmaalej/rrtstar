@@ -258,12 +258,15 @@ static int find_nearest(struct kdnode *node, const double *pos, double range, st
 {
 	double dist_sq, dx;
 	int i, ret, added_res = 0;
-
+	double dist_this;
 	if(!node) return 0;
 
 	dist_sq = 0;
 	for(i=0; i<dim; i++) {
-		dist_sq += SQ(node->pos[i] - pos[i]);
+		
+			dist_this = node->pos[i] - pos[i];
+		
+		dist_sq += SQ(dist_this);
 	}
 	if(dist_sq <= SQ(range)) {
 		if(rlist_insert(list, node, ordered ? dist_sq : -1.0) == -1) {
@@ -294,7 +297,7 @@ static void kd_nearest_i(struct kdnode *node, const double *pos, struct kdnode *
 	double dummy, dist_sq;
 	struct kdnode *nearer_subtree, *farther_subtree;
 	double *nearer_hyperrect_coord, *farther_hyperrect_coord;
-
+	double dist_this;
 	/* Decide whether to go left or right in the tree */
 	dummy = pos[dir] - node->pos[dir];
 	if (dummy <= 0) {
@@ -324,8 +327,17 @@ static void kd_nearest_i(struct kdnode *node, const double *pos, struct kdnode *
 	/* Check the distance of the point at the current node, compare it
 	 * with our best so far */
 	dist_sq = 0;
-	for(i=0; i < rect->dim; i++) {
-		dist_sq += SQ(node->pos[i] - pos[i]);
+
+	for(i=0; i<rect->dim; i++) {
+		/*if (i==0){
+			double dx= abs(node->pos[i] - pos[i]);
+			if (dx<180) dist_this=dx; 
+			else dist_this=360-dx;
+		}
+		else {*/
+			dist_this = node->pos[i] - pos[i];
+		//}
+		dist_sq += SQ(dist_this);
 	}
 	if (dist_sq < *result_dist_sq) {
 		*result = node;
@@ -354,6 +366,7 @@ struct kdres *kd_nearest(struct kdtree *kd, const double *pos)
 	struct kdnode *result;
 	struct kdres *rset;
 	double dist_sq;
+	double dist_this;
 	int i;
 
 	if (!kd) return 0;
@@ -379,9 +392,13 @@ struct kdres *kd_nearest(struct kdtree *kd, const double *pos)
 	/* Our first guesstimate is the root node */
 	result = kd->root;
 	dist_sq = 0;
-	for (i = 0; i < kd->dim; i++)
-		dist_sq += SQ(result->pos[i] - pos[i]);
 
+	for(i=0; i<kd->dim; i++) {
+
+			dist_this = result->pos[i] - pos[i];
+		
+		dist_sq += SQ(dist_this);
+	}
 	/* Search for the nearest neighbour recursively */
 	kd_nearest_i(kd->root, pos, &result, &dist_sq, rect);
 

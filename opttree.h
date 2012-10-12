@@ -104,7 +104,7 @@ int opttree_destroy (opttree_t *self);
 int opttree_set_root_state (opttree_t *self, state_t *state);
 
 // Evaluates a single iteration of the RRT/RRT*
-int opttree_iteration (opttree_t *self);
+int opttree_iteration (opttree_t *self,int k);
 
 // Empties the tree and reinializes all the related variables
 int opttree_reinitialize (opttree_t *self);

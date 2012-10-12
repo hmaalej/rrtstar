@@ -31,6 +31,7 @@ http://arxiv.org/abs/1005.0416
 */
 
 #include "optsystem.h"
+#include <stdarg.h>
 
 #include "geos_c.h"
 
@@ -40,7 +41,7 @@ optsystem_on_obstacle (optsystem_t *self, state_t *state);
 
 // Returns 1 iff the line connecting (state_initial) and (state_final) lies on an obstacle
 int 
-optsystem_segment_on_obstacle (optsystem_t *self, state_t *state_initial, state_t *state_final);
+optsystem_segment_on_obstacle (optsystem_t *self, state_t *state_initial, state_t *state_final,int k);
 
 
 // Allocates memory for and initializes an empty dynamical system
@@ -53,8 +54,8 @@ int optsystem_new_system (optsystem_t *self) {
     self->obstacle_list = NULL;
     return 1;
 }
-
-void notice(const char *fmt, ...) {
+void
+notice(const char *fmt, ...) {
 	va_list ap;
 
         fprintf( stdout, "NOTICE: ");
@@ -65,7 +66,8 @@ void notice(const char *fmt, ...) {
         fprintf( stdout, "\n" );
 }
 
-void log_and_exit(const char *fmt, ...) {
+void
+log_and_exit(const char *fmt, ...) {
 	va_list ap;
 
         fprintf( stdout, "ERROR: ");
@@ -188,15 +190,24 @@ int optsystem_sample_target_state (optsystem_t *self, state_t *random_state) {
 
 
 // Evaluates the Euclidean distance between two states -- used mainly for the Nearest and CloseNodes procedures
-double optsystem_evaluate_distance (optsystem_t *self, state_t *state_from, state_t *state_to) {
+double optsystem_evaluate_distance (optsystem_t *self, state_t *state_from, state_t *state_to,int k) {
     
     double dist = 0;
     for (int i = 0; i < NUM_STATES; i++) {
-        double dist_this = state_to->x[i] - state_from->x[i];
-        dist += dist_this * dist_this;
+        double dist_this;
+	if (i==0){
+		double dx= abs(state_to->x[i] - state_from->x[i]);
+		if (dx<180/k) dist_this=dx; 
+		else dist_this=360/k-dx;
+	}
+	else {
+	dist_this = state_to->x[i] - state_from->x[i];
+	        
+	dist += dist_this * dist_this;
     }
 
     return sqrt (dist);
+}
 }
 
 
@@ -219,21 +230,26 @@ double optsystem_evaluate_distance_for_cost (optsystem_t *self, GSList *inputs) 
 
 
 // Checks whether the line segment between (state_initial) and (state_final) lies on an obstacle
-int optsystem_segment_on_obstacle (optsystem_t *self, state_t *state_initial, state_t *state_final) {
-
-    initGEOS(notice, log_and_exit);
+int optsystem_segment_on_obstacle (optsystem_t *self, state_t *state_initial, state_t *state_final,int k) {
+	
+    	initGEOS(notice, log_and_exit);
 	GEOSGeometry* g1;
 	GSList *obstacle_list_curr = self->obstacle_list;
     
+	double dx= abs(state_initial->x[0] - state_final->x[0]);
     //create with coordinates 
+	if (dx<180/k){
 	GEOSCoordSequence* cs1;
 	int i;
 	cs1 = GEOSCoordSeq_create(2,2);
 
 	i=GEOSCoordSeq_setX(cs1, 0, state_initial->x[0]);
-	i=GEOSCoordSeq_setY(cs1, 0, state_initial->x[1]);
+
+	i=GEOSCoordSeq_setY(cs1, 0,state_initial->x[1]);
+
 	i=GEOSCoordSeq_setX(cs1, 1, state_final->x[0]);
-	i=GEOSCoordSeq_setY(cs1, 1, state_final->x[1]);
+
+	i=GEOSCoordSeq_setY(cs1, 1,state_final->x[1]);
 
 
 
@@ -242,6 +258,7 @@ int optsystem_segment_on_obstacle (optsystem_t *self, state_t *state_initial, st
 	GEOSGeometry* g2;
 	while (obstacle_list_curr) {
 		g2 = (obstacle_list_curr->data); 
+	
 		if (GEOSIntersects(g1,g2)) {
 			finishGEOS();
 			return 1;
@@ -249,27 +266,74 @@ int optsystem_segment_on_obstacle (optsystem_t *self, state_t *state_initial, st
 
 		obstacle_list_curr = g_slist_next (obstacle_list_curr);		
 	}
-
-    finishGEOS();
-    return 0;
+	finishGEOS();
+	return 0;
+	}
+	
+	else {
+		   	
+		if (state_initial->x[0]<state_final->x[0]){
+			state_t state_ptr=*state_final;
+			state_ptr.x[0]=state_final->x[0]-360/k;
+			double cd=(state_ptr.x[1]-state_initial->x[1])/(state_ptr.x[0]-state_initial->x[0]);
+			state_t state1 = {
+				.x = {
+					-180/k, cd*(-180/k-state_initial->x[0])+state_initial->x[1]}
+			};
+			state_t state2 = {
+				.x = {
+					180/k, cd*(-180/k-state_initial->x[0])+state_initial->x[1]}
+			};
+			int r1=optsystem_segment_on_obstacle (self,state_initial,&state1,k);
+			if (r1) {return 1;}
+			else{
+				int r2=optsystem_segment_on_obstacle (self,state_final,&state2,k);
+				return r2;
+			}
+		}
+		else {
+			
+			state_t state_ptr=*state_initial;
+			state_ptr.x[0]=state_initial->x[0]-360/k;
+			double cd=(state_ptr.x[1]-state_final->x[1])/(state_ptr.x[0]-state_final->x[0]);
+			state_t state1 = {
+				.x = {
+					-180/k, cd*(-180/k-state_final->x[0])+state_final->x[1]}
+			};
+			state_t state2 = {
+				.x = {
+					180/k, cd*(-180/k-state_final->x[0])+state_final->x[1]}
+			};
+			int r1=optsystem_segment_on_obstacle (self,state_final,&state1,k);
+			if (r1) { return 1;}
+			else{
+				int r2=optsystem_segment_on_obstacle (self,state_initial,&state2,k);
+				return r2;
+			}
+		}
+			
+	}
 }
 
 
 // Extends a given state towards another state
 int optsystem_extend_to (optsystem_t *self, state_t *state_from, state_t *state_towards, 
                          int *fully_extends, GSList **trajectory,
-                         int *num_node_states, int **nodes_states, GSList **inputs) {
+                         int *num_node_states, int **nodes_states, GSList **inputs,int k) {
     
     GSList *trajectory_curr = NULL; // Start with an empty trajectory
     GSList *inputs_curr = NULL;
 
-    double dist_x = state_towards->x[0] - state_from->x[0];
+    double dist_x;
     double dist_y = state_towards->x[1] - state_from->x[1];
+    double dx= abs(state_towards->x[0] - state_from->x[0]);
+    if (dx<180/k) dist_x=dx;
+    else dist_x=360/k-dx;
 
     double dist = sqrt (dist_x * dist_x + dist_y * dist_y);
 
     if (dist < 1) {
-        if (optsystem_segment_on_obstacle (self, state_from, state_towards) ) {
+        if (optsystem_segment_on_obstacle (self, state_from, state_towards,k) ) {
             *fully_extends = 0;
             return 0;
         }
@@ -285,9 +349,30 @@ int optsystem_extend_to (optsystem_t *self, state_t *state_from, state_t *state_
     else { 
         *fully_extends = 0;
         state_t *state_new = optsystem_new_state (self);  
-        state_new->x[0] = (state_towards->x[0] - state_from->x[0])/dist + state_from->x[0];
-        state_new->x[1] = (state_towards->x[1] - state_from->x[1])/dist + state_from->x[1];
-        if (optsystem_segment_on_obstacle(self, state_from, state_new)) {
+	if (dx<180/k) {
+		state_new->x[0] = (state_towards->x[0] - state_from->x[0])/dist + state_from->x[0];
+		state_new->x[1] = (state_towards->x[1] - state_from->x[1])/dist + state_from->x[1];
+	}
+	else {
+		if (state_from->x[0]<state_towards->x[0]){
+			state_t *state_ptr=state_towards;
+			state_ptr->x[0]=state_towards->x[0]-360/k;
+			double a=(state_ptr->x[0] - state_from->x[0])/dist + state_from->x[0]; 	
+			if (a<-180/k) { state_new->x[0] = a+360/k;}
+			else state_new->x[0] = a;
+			state_new->x[1] = (state_ptr->x[1] - state_from->x[1])/dist + state_from->x[1];	
+		}
+		else {
+			state_t *state_ptr=state_towards;
+			state_ptr->x[0]=state_towards->x[0]+360/k;
+			double a=(state_ptr->x[0] - state_from->x[0])/dist + state_from->x[0]; 	
+			if (a>180/k) { state_new->x[0] = a-360/k;}
+			else state_new->x[0] = a;
+			state_new->x[1] = (state_ptr->x[1] - state_from->x[1])/dist + state_from->x[1];	
+		}
+	}
+	
+        if (optsystem_segment_on_obstacle(self, state_from, state_new,k)) {
             optsystem_free_state (self, state_new);
             return 0;
         }
@@ -306,31 +391,42 @@ int optsystem_extend_to (optsystem_t *self, state_t *state_from, state_t *state_
 }
 
 
+
+
+
 // Checks whether a given state is on an obstacle
 gboolean optsystem_on_obstacle (optsystem_t *self, state_t *state) {
 
-    initGEOS(notice, log_and_exit);
+    
+    	initGEOS(notice, log_and_exit);
 	GEOSGeometry* g1;
 	GEOSGeometry* g2;
 	GSList *obstacle_list_curr = self->obstacle_list;
 
     //create with coordinates 
 	GEOSCoordSequence* cs1;
+
 	int i;
-	cs1 = GEOSCoordSeq_create(1,2);
+cs1 = GEOSCoordSeq_create(1,2);
 
-	i=GEOSCoordSeq_setX(cs1, 0, state->x[0]);
-	i=GEOSCoordSeq_setY(cs1, 0,state->x[1]);
-	g1 = GEOSGeom_createPoint(cs1);
 
-	while (obstacle_list_curr) {
-		g2 = (obstacle_list_curr->data);
-		if ( GEOSContains(g2, g1) ) {
-			finishGEOS();	
-			return 1;
-		}
-	 	obstacle_list_curr = g_slist_next (obstacle_list_curr);
+i=GEOSCoordSeq_setX(cs1, 0, state->x[0]);
+
+i=GEOSCoordSeq_setY(cs1, 0,state->x[1]);
+
+g1 = GEOSGeom_createPoint(cs1);
+
+while (obstacle_list_curr) {
+	g2 = (obstacle_list_curr->data);
+	
+	if ( GEOSContains(g2, g1) ){ 
+		
+		finishGEOS();	
+		return 1;
 	}
+	
+ 	obstacle_list_curr = g_slist_next (obstacle_list_curr);
+}
 
     finishGEOS();
     return 0;
@@ -349,7 +445,7 @@ gboolean optsystem_is_reaching_target (optsystem_t *self, state_t *state) {
 }
 
 
-double optsystem_evaluate_cost_to_go (optsystem_t *self, state_t *state) {
+double optsystem_evaluate_cost_to_go (optsystem_t *self, state_t *state,int k) {
 
     // If state is in the goal region then return zero
     if (optsystem_is_reaching_target (self, state)) 
@@ -362,9 +458,11 @@ double optsystem_evaluate_cost_to_go (optsystem_t *self, state_t *state) {
     if (self->goal_region.size[1] < min_side)
         min_side = self->goal_region.size[1]/2.0;
 
-    double dist_x = state->x[0] - self->goal_region.center[0];
+    double dist_x;
     double dist_y = state->x[1] - self->goal_region.center[1];
-
+    double dx= abs(state->x[0] - self->goal_region.center[0]);
+    if (dx<180/k) dist_x=dx;
+    else dist_x=360/k-dx;    
 
     dist_x = fabs(dist_x);
     dist_y = fabs(dist_y);
@@ -405,25 +503,33 @@ double optsystem_evaluate_cost_to_go (optsystem_t *self, state_t *state) {
         double dist_this;
         double dist_x;
         double dist_y;
-
-        dist_x = state->x[0] - (self->goal_region.center[0] + self->goal_region.size[0]/2.0);
+	
+	dx= abs(state->x[0] - (self->goal_region.center[0] + self->goal_region.size[0]/2.0));
+        if (dx<180/k) dist_x=dx;
+    	else dist_x=360/k-dx;   
         dist_y = state->x[1] - (self->goal_region.center[1] + self->goal_region.size[1]/2.0);
         dist_this = sqrt(dist_x*dist_x + dist_y*dist_y);
         dist_min = dist_this;
 
-        dist_x = state->x[0] - (self->goal_region.center[0] - self->goal_region.size[0]/2.0);
+	dx= abs(state->x[0] - (self->goal_region.center[0] - self->goal_region.size[0]/2.0));
+        if (dx<180/k) dist_x=dx; 
+    	else dist_x=360/k-dx;
         dist_y = state->x[1] - (self->goal_region.center[1] + self->goal_region.size[1]/2.0);
         dist_this = sqrt(dist_x*dist_x + dist_y*dist_y);
         if (dist_this < dist_min)
             dist_min = dist_this;
 
-        dist_x = state->x[0] - (self->goal_region.center[0] - self->goal_region.size[0]/2.0);
+	dx= abs(state->x[0] - (self->goal_region.center[0] - self->goal_region.size[0]/2.0));
+        if (dx<180/k) dist_x=dx; 
+    	else dist_x=360/k-dx;
         dist_y = state->x[1] - (self->goal_region.center[1] - self->goal_region.size[1]/2.0);
         dist_this = sqrt(dist_x*dist_x + dist_y*dist_y);
         if (dist_this < dist_min)
             dist_min = dist_this;
         
-        dist_x = state->x[0] - (self->goal_region.center[0] + self->goal_region.size[0]/2.0);
+	dx= abs(state->x[0] - (self->goal_region.center[0] + self->goal_region.size[0]/2.0));
+        if (dx<180/k) dist_x=dx;
+    	else dist_x=360/k-dx;
         dist_y = state->x[1] - (self->goal_region.center[1] - self->goal_region.size[1]/2.0);
         dist_this = sqrt(dist_x*dist_x + dist_y*dist_y);
         if (dist_this < dist_min)
@@ -491,10 +597,38 @@ gboolean optsystem_update_obstacles (optsystem_t *self, GSList *obstacle_list) {
     // Add new obstacles
     GSList *obstacle_list_curr = obstacle_list;
     while (obstacle_list_curr) {
-		GEOSGeometry* g_curr = (obstacle_list_curr->data);
+	GEOSGeometry* g_curr = (obstacle_list_curr->data);
+	
+      
         self->obstacle_list = g_slist_prepend (self->obstacle_list, g_curr);
+
         obstacle_list_curr = g_slist_next (obstacle_list_curr);
     }
 
     return TRUE;
 }
+/*
+//create rectangle_list
+gboolean optsystem_update_rectangles (optsystem_t *self, GSList *rectangle_list) {
+
+    // Clear the previous rectangle
+    while (self->rectangle_list) {
+        GEOSGeometry* g = (self->rectangle_list->data);
+        self->rectangle_list = g_slist_remove (self->rectangle_list, g);
+        free (g);
+    }
+    
+    // Add new obstacles
+    GSList *rectangle_list_curr = rectangle_list;
+    while (rectangle_list_curr) {
+	GEOSGeometry* g_curr = (rectangle_list_curr->data);
+	
+      
+        self->rectangle_list = g_slist_prepend (self->rectangle_list, g_curr);
+
+        rectangle_list_curr = g_slist_next (rectangle_list_curr);
+    }
+
+    return TRUE;
+}
+*/
